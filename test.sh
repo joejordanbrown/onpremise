@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-echo "::group::Setting up variables and helpers ..."
+source "$(dirname $0)/install/_lib.sh" 
+
+echo "${_group}Setting up variables and helpers ..."
 export SENTRY_TEST_HOST="${SENTRY_TEST_HOST:-http://localhost:9000}"
 TEST_USER='test@example.com'
 TEST_PASS='test123TEST'
@@ -32,17 +34,17 @@ cleanup () {
   echo "Done."
 }
 trap_with_arg cleanup ERR INT TERM EXIT
-echo "::endgroup::"
+echo "${_endgroup}"
 
-echo "::group::Starting Sentry for tests ..."
+echo "${_group}Starting Sentry for tests ..."
 # Disable beacon for e2e tests
-echo 'SENTRY_BEACON=False' >> sentry/sentry.conf.py
-docker-compose run --rm web createuser --superuser --email $TEST_USER --password $TEST_PASS || true
-docker-compose up -d
+echo 'SENTRY_BEACON=False' >> $SENTRY_CONFIG_PY
+$dcr web createuser --superuser --email $TEST_USER --password $TEST_PASS || true
+$dc up -d
 printf "Waiting for Sentry to be up"; timeout 60 bash -c 'until $(curl -Isf -o /dev/null $SENTRY_TEST_HOST); do printf '.'; sleep 0.5; done'
-echo "::endgroup::"
+echo "${_endgroup}"
 
-echo "::group::Running tests ..."
+echo "${_group}Running tests ..."
 get_csrf_token () { awk '$6 == "sc" { print $7 }' $COOKIE_FILE; }
 sentry_api_request () { curl -s -H 'Accept: application/json; charset=utf-8' -H "Referer: $SENTRY_TEST_HOST" -H 'Content-Type: application/json' -H "X-CSRFToken: $(get_csrf_token)" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$SENTRY_TEST_HOST/api/0/$1" ${@:2}; }
 
@@ -75,15 +77,15 @@ do
   echo "$LOGIN_RESPONSE" | grep "$i[,}]" >& /dev/null
   echo "Pass."
 done
-echo "::endgroup::"
+echo "${_endgroup}"
 
-echo "::group::Running moar tests !!!"
+echo "${_group}Running moar tests !!!"
 # Set up initial/required settings (InstallWizard request)
 sentry_api_request "internal/options/?query=is:required" -X PUT --data '{"mail.use-tls":false,"mail.username":"","mail.port":25,"system.admin-email":"ben@byk.im","mail.password":"","mail.from":"root@localhost","system.url-prefix":"'"$SENTRY_TEST_HOST"'","auth.allow-registration":false,"beacon.anonymous":true}' > /dev/null
 
 SENTRY_DSN=$(sentry_api_request "projects/sentry/internal/keys/" | awk 'BEGIN { RS=",|:{\n"; FS="\""; } $2 == "public" && $4 ~ "^http" { print $4; exit; }')
 # We ignore the protocol and the host as we already know those
-DSN_PIECES=(`echo $SENTRY_DSN | sed -ne 's|^https\?://\([0-9a-z]\+\)@[^/]\+/\([0-9]\+\)$|\1\n\2|p'`)
+DSN_PIECES=(`echo $SENTRY_DSN | sed -ne 's|^https\{0,1\}://\([0-9a-z]\{1,\}\)@[^/]\{1,\}/\([0-9]\{1,\}\)$|\1 \2|p' | tr ' ' '\n'`)
 SENTRY_KEY=${DSN_PIECES[0]}
 PROJECT_ID=${DSN_PIECES[1]}
 
@@ -112,4 +114,8 @@ do
   echo "$EVENT_RESPONSE" | grep "$i[,}]" >& /dev/null
   echo "Pass."
 done
-echo "::endgroup::"
+echo "${_endgroup}"
+
+echo "${_group}Ensure cleanup crons are working ..."
+$dc ps | grep -q -- "-cleanup_.\+[[:space:]]\+Up[[:space:]]\+"
+echo "${_endgroup}"

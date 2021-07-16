@@ -6,7 +6,7 @@ on:
   push:
     branches:
       - "master"
-      - "releases/**"
+      - "release/**"
   pull_request:
 env:
   DOCKER_COMPOSE_VERSION: 1.24.1
@@ -14,7 +14,18 @@ defaults:
   run:
     shell: bash
 jobs:
-  test:
+  unit-test:
+    runs-on: ubuntu-18.04
+    name: "unit tests"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Unit Tests
+        working-directory: install
+        run: find ./ -type f -name "*-test.sh" -exec "./{}" \;
+
+  integration-test:
     runs-on: ubuntu-18.04
     name: "test"
     steps:
@@ -28,12 +39,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Install and test
+      - name: Integration Test
         run: |
           echo "Testing initial install"
           ./install.sh
           ./test.sh
           echo "Testing in-place upgrade"
+          # Also test plugin installation here
+          echo "sentry-auth-oidc" >> sentry/requirements.txt
           ./install.sh --minimize-downtime
           ./test.sh
 
