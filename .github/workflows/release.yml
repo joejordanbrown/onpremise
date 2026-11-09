@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to release (optional)
+        description: Version to release (or "auto")
         required: false
       force:
         description: Force a release even when there are release-blockers (optional)
@@ -13,20 +13,51 @@ on:
     # We also make this an hour after all others such as Sentry,
     # Snuba, and Relay to make sure their releases finish.
     - cron: "0 18 15 * *"
+permissions:
+  contents: read
 jobs:
   release:
+    if: github.repository_owner == 'getsentry'
     runs-on: ubuntu-latest
     name: "Release a new version"
     steps:
-      - uses: actions/checkout@v2
+      - name: Get auth token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          token: ${{ secrets.GH_RELEASE_PAT }}
+          app-id: ${{ vars.SENTRY_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.SENTRY_RELEASE_BOT_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.token.outputs.token }}
           fetch-depth: 0
       - name: Prepare release
-        uses: getsentry/action-prepare-release@v1
+        id: prepare-release
+        uses: getsentry/craft@v3
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_PAT }}
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
         with:
           version: ${{ github.event.inputs.version }}
           force: ${{ github.event.inputs.force }}
-          calver: true
+    outputs:
+      release-version: ${{ env.RELEASE_VERSION }}
+  dogfood-release:
+    if: github.repository_owner == 'getsentry'
+    runs-on: ubuntu-latest
+    name: Create release on self-hosted dogfood instance
+    needs: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: getsentry/action-release@v3
+        env:
+          SENTRY_ORG: self-hosted
+          SENTRY_PROJECT: installer
+          SENTRY_URL: https://self-hosted.getsentry.net/
+          SENTRY_AUTH_TOKEN: ${{ secrets.SELF_HOSTED_RELEASE_TOKEN }}
+        with:
+          environment: production
+          version: ${{ needs.release.outputs.release-version }}
+          ignore_empty: true
+          ignore_missing: true

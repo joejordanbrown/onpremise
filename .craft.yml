@@ -1,12 +1,12 @@
-minVersion: "0.14.0"
-github:
-  owner: getsentry
-  repo: onpremise
-releaseBranchPrefix: releases
-changelogPolicy: none
+minVersion: 3.9.0
+changelog:
+  policy: auto
+preReleaseCommand: bash scripts/bump-version.sh
+postReleaseBump:
+  version: nightly
 artifactProvider:
   name: none
-statusProvider:
-  name: github
 targets:
-  - name: github
+- name: github
+versioning:
+  policy: calver
